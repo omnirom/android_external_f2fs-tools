@@ -22,7 +22,7 @@ static unsigned char f2fs_type_by_mode[S_IFMT >> S_SHIFT] = {
 };
 
 char *tree_mark;
-int tree_mark_size = 256;
+uint32_t tree_mark_size = 256;
 
 static int add_into_hard_link_list(struct f2fs_sb_info *sbi, u32 nid, u32 link_cnt)
 {
@@ -115,7 +115,7 @@ static int is_valid_ssa_node_blk(struct f2fs_sb_info *sbi, u32 nid, u32 blk_addr
 		if (le32_to_cpu(sum_entry.nid) != nid) {
 			DBG(0, "nid                       [0x%x]\n", nid);
 			DBG(0, "target blk_addr           [0x%x]\n", blk_addr);
-			DBG(0, "summary blk_addr          [0x%lx]\n",
+			DBG(0, "summary blk_addr          [0x%x]\n",
 					GET_SUM_BLKADDR(sbi, GET_SEGNO(sbi, blk_addr)));
 			DBG(0, "seg no / offset           [0x%x / 0x%x]\n",
 					GET_SEGNO(sbi, blk_addr), OFFSET_IN_SEG(sbi, blk_addr));
@@ -249,7 +249,6 @@ int fsck_chk_node_blk(struct f2fs_sb_info *sbi,
 		case TYPE_INDIRECT_NODE:
 			ret = fsck_chk_idnode_blk(sbi,
 					inode,
-					nid,
 					ftype,
 					node_blk,
 					blk_cnt);
@@ -257,7 +256,6 @@ int fsck_chk_node_blk(struct f2fs_sb_info *sbi,
 		case TYPE_DOUBLE_INDIRECT_NODE:
 			ret = fsck_chk_didnode_blk(sbi,
 					inode,
-					nid,
 					ftype,
 					node_blk,
 					blk_cnt);
@@ -284,7 +282,7 @@ int fsck_chk_inode_blk(struct f2fs_sb_info *sbi,
 	enum NODE_TYPE ntype;
 	u32 i_links = le32_to_cpu(node_blk->i.i_links);
 	u64 i_blocks = le64_to_cpu(node_blk->i.i_blocks);
-	int idx = 0;
+	unsigned int idx = 0;
 	int ret = 0;
 
 	ASSERT(node_blk->footer.nid == node_blk->footer.ino);
@@ -341,13 +339,16 @@ int fsck_chk_inode_blk(struct f2fs_sb_info *sbi,
 	if (ftype == F2FS_FT_CHRDEV || ftype == F2FS_FT_BLKDEV ||
 			ftype == F2FS_FT_FIFO || ftype == F2FS_FT_SOCK)
 		goto check;
+	if((node_blk->i.i_inline & F2FS_INLINE_DATA)){
+		DBG(3, "ino[0x%x] has inline data!\n", nid);
+		goto check;
+	}
 
 	/* check data blocks in inode */
 	for (idx = 0; idx < ADDRS_PER_INODE(&node_blk->i); idx++) {
 		if (le32_to_cpu(node_blk->i.i_addr[idx]) != 0) {
 			*blk_cnt = *blk_cnt + 1;
 			ret = fsck_chk_data_blk(sbi,
-					&node_blk->i,
 					le32_to_cpu(node_blk->i.i_addr[idx]),
 					&child_cnt,
 					&child_files,
@@ -388,9 +389,9 @@ check:
 				le32_to_cpu(node_blk->footer.ino), node_blk->i.i_name,
 				le32_to_cpu(node_blk->i.i_current_depth), child_files);
 	if (ftype == F2FS_FT_ORPHAN)
-		DBG(1, "Orphan Inode: ino: %x name: %s i_blocks: %d\n\n",
+		DBG(1, "Orphan Inode: ino: %x name: %s i_blocks: %u\n\n",
 				le32_to_cpu(node_blk->footer.ino), node_blk->i.i_name,
-				i_blocks);
+				(u32)i_blocks);
 	if ((ftype == F2FS_FT_DIR && i_links != child_cnt) ||
 			(i_blocks != *blk_cnt)) {
 		print_node_info(node_blk);
@@ -421,7 +422,6 @@ int fsck_chk_dnode_blk(struct f2fs_sb_info *sbi,
 			continue;
 		*blk_cnt = *blk_cnt + 1;
 		fsck_chk_data_blk(sbi,
-				inode,
 				le32_to_cpu(node_blk->dn.addr[idx]),
 				&child_cnt,
 				&child_files,
@@ -437,7 +437,6 @@ int fsck_chk_dnode_blk(struct f2fs_sb_info *sbi,
 
 int fsck_chk_idnode_blk(struct f2fs_sb_info *sbi,
 		struct f2fs_inode *inode,
-		u32 nid,
 		enum FILE_TYPE ftype,
 		struct f2fs_node *node_blk,
 		u32 *blk_cnt)
@@ -461,7 +460,6 @@ int fsck_chk_idnode_blk(struct f2fs_sb_info *sbi,
 
 int fsck_chk_didnode_blk(struct f2fs_sb_info *sbi,
 		struct f2fs_inode *inode,
-		u32 nid,
 		enum FILE_TYPE ftype,
 		struct f2fs_node *node_blk,
 		u32 *blk_cnt)
@@ -489,7 +487,7 @@ static void print_dentry(__u32 depth, __u8 *name,
 	int last_de = 0;
 	int next_idx = 0;
 	int name_len;
-	int i;
+	unsigned int i;
 	int bit_offset;
 
 	if (config.dbg_lv != -1)
@@ -523,7 +521,6 @@ static void print_dentry(__u32 depth, __u8 *name,
 }
 
 int fsck_chk_dentry_blk(struct f2fs_sb_info *sbi,
-		struct f2fs_inode *inode,
 		u32 blk_addr,
 		u32 *child_cnt,
 		u32 *child_files,
@@ -607,7 +604,6 @@ int fsck_chk_dentry_blk(struct f2fs_sb_info *sbi,
 }
 
 int fsck_chk_data_blk(struct f2fs_sb_info *sbi,
-		struct f2fs_inode *inode,
 		u32 blk_addr,
 		u32 *child_cnt,
 		u32 *child_files,
@@ -643,7 +639,6 @@ int fsck_chk_data_blk(struct f2fs_sb_info *sbi,
 
 	if (ftype == F2FS_FT_DIR) {
 		fsck_chk_dentry_blk(sbi,
-				inode,
 				blk_addr,
 				child_cnt,
 				child_files,
@@ -655,17 +650,19 @@ int fsck_chk_data_blk(struct f2fs_sb_info *sbi,
 
 int fsck_chk_orphan_node(struct f2fs_sb_info *sbi)
 {
-	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
 	int ret = 0;
 	u32 blk_cnt = 0;
 
 	block_t start_blk, orphan_blkaddr, i, j;
 	struct f2fs_orphan_block *orphan_blk;
+	struct f2fs_checkpoint *ckpt = F2FS_CKPT(sbi);
 
-	if (!is_set_ckpt_flags(F2FS_CKPT(sbi), CP_ORPHAN_PRESENT_FLAG))
+	if (!is_set_ckpt_flags(ckpt, CP_ORPHAN_PRESENT_FLAG))
 		return 0;
 
-	start_blk = __start_cp_addr(sbi) + 1;
+	start_blk = __start_cp_addr(sbi) + 1 +
+		le32_to_cpu(F2FS_RAW_SUPER(sbi)->cp_payload);
+
 	orphan_blkaddr = __start_sum_addr(sbi) - 1;
 
 	orphan_blk = calloc(BLOCK_SZ, 1);
@@ -675,7 +672,7 @@ int fsck_chk_orphan_node(struct f2fs_sb_info *sbi)
 
 		for (j = 0; j < le32_to_cpu(orphan_blk->entry_count); j++) {
 			nid_t ino = le32_to_cpu(orphan_blk->ino[j]);
-			DBG(1, "[%3ld] ino [0x%x]\n", i, ino);
+			DBG(1, "[%3d] ino [0x%x]\n", i, ino);
 			blk_cnt = 1;
 			ret = fsck_chk_node_blk(sbi,
 					NULL,
@@ -751,7 +748,7 @@ int fsck_init(struct f2fs_sb_info *sbi)
 
 int fsck_verify(struct f2fs_sb_info *sbi)
 {
-	int i = 0;
+	unsigned int i = 0;
 	int ret = 0;
 	u32 nr_unref_nid = 0;
 	struct f2fs_fsck *fsck = F2FS_FSCK(sbi);
@@ -801,9 +798,9 @@ int fsck_verify(struct f2fs_sb_info *sbi)
 
 	printf("[FSCK] valid_block_count matching with CP            ");
 	if (sbi->total_valid_block_count == fsck->chk.valid_blk_cnt) {
-		printf(" [Ok..] [0x%lx]\n", fsck->chk.valid_blk_cnt);
+		printf(" [Ok..] [0x%x]\n", (u32)fsck->chk.valid_blk_cnt);
 	} else {
-		printf(" [Fail] [0x%lx]\n", fsck->chk.valid_blk_cnt);
+		printf(" [Fail] [0x%x]\n", (u32)fsck->chk.valid_blk_cnt);
 		ret = EXIT_ERR_CODE;
 	}
 

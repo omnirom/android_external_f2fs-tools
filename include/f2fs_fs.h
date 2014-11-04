@@ -4,9 +4,7 @@
  * Copyright (c) 2012 Samsung Electronics Co., Ltd.
  *             http://www.samsung.com/
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * Dual licensed under the GPL or LGPL version 2 licenses.
  */
 #ifndef __F2FS_FS_H__
 #define __F2FS_FS_H__
@@ -14,8 +12,6 @@
 #include <inttypes.h>
 #include <linux/types.h>
 #include <sys/types.h>
-#include <endian.h>
-#include <byteswap.h>
 
 #ifdef HAVE_CONFIG_H
 #include <config.h>
@@ -25,7 +21,7 @@ typedef u_int64_t	u64;
 typedef u_int32_t	u32;
 typedef u_int16_t	u16;
 typedef u_int8_t	u8;
-typedef u64		block_t;
+typedef u32		block_t;
 typedef u32		nid_t;
 typedef u8		bool;
 typedef unsigned long	pgoff_t;
@@ -185,7 +181,7 @@ struct f2fs_configuration {
 	void *private;
 } __attribute__((packed));
 
-#ifndef CONFIG_64BIT
+#ifdef CONFIG_64BIT
 #define BITS_PER_LONG	64
 #else
 #define BITS_PER_LONG	32
@@ -281,6 +277,7 @@ struct f2fs_super_block {
 	__le16 volume_name[512];	/* volume name */
 	__le32 extension_count;		/* # of extensions below */
 	__u8 extension_list[F2FS_MAX_EXTENSION][8];	/* extension array */
+	__le32 cp_payload;
 } __attribute__((packed));
 
 /*
@@ -360,6 +357,13 @@ struct f2fs_extent {
 
 #define F2FS_INLINE_XATTR	0x01	/* file inline xattr flag */
 #define F2FS_INLINE_DATA	0x02	/* file inline data flag */
+#define MAX_INLINE_DATA		(sizeof(__le32) * (DEF_ADDRS_PER_INODE - \
+						F2FS_INLINE_XATTR_ADDRS - 1))
+
+#define INLINE_DATA_OFFSET	(PAGE_CACHE_SIZE - sizeof(struct node_footer) \
+				- sizeof(__le32)*(DEF_ADDRS_PER_INODE + 5 - 1))
+
+#define DEF_DIR_LEVEL		0
 
 struct f2fs_inode {
 	__le16 i_mode;			/* file mode */
@@ -383,7 +387,7 @@ struct f2fs_inode {
 	__le32 i_pino;			/* parent inode number */
 	__le32 i_namelen;		/* file name length */
 	__u8 i_name[F2FS_NAME_LEN];	/* file name for SPOR */
-	__u8 i_reserved2;		/* for backward compatibility */
+	__u8 i_dir_level;		/* dentry_level for large dir */
 
 	struct f2fs_extent i_ext;	/* caching a largest extent */
 
@@ -655,9 +659,12 @@ extern int f2fs_crc_valid(u_int32_t blk_crc, void *buf, int len);
 extern void f2fs_init_configuration(struct f2fs_configuration *);
 extern int f2fs_dev_is_umounted(struct f2fs_configuration *);
 extern int f2fs_get_device_info(struct f2fs_configuration *);
+extern void f2fs_finalize_device(struct f2fs_configuration *);
 
 extern int dev_read(void *, __u64, size_t);
 extern int dev_write(void *, __u64, size_t);
+/* All bytes in the buffer must be 0 use dev_fill(). */
+extern int dev_fill(void *, __u64, size_t);
 
 extern int dev_read_block(void *, __u64);
 extern int dev_read_blocks(void *, __u64, __u32 );

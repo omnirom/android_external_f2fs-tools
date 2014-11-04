@@ -12,7 +12,7 @@
 #include <libgen.h>
 
 struct f2fs_fsck gfsck = {
-	.sbi.fsck = &gfsck,
+	.sbi = { .fsck = &gfsck, },
 };
 
 void fsck_usage()
@@ -205,6 +205,9 @@ int fsck_f2fs_main (int argc, char **argv)
 	}
 
 	f2fs_do_umount(sbi);
+
+	f2fs_finalize_device(&config);
+
 	printf("\nDone.\n");
 	return ret;
 }
