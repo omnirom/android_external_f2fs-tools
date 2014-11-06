@@ -72,6 +72,7 @@ struct seg_entry {
 	unsigned short ckpt_valid_blocks;
 	unsigned char *ckpt_valid_map;
 	unsigned char type;             /* segment type like CURSEG_XXX_TYPE */
+	unsigned char orig_type;        /* segment type like CURSEG_XXX_TYPE */
 	unsigned long long mtime;       /* modification time of the segment */
 };
 
@@ -158,7 +159,6 @@ struct f2fs_sb_info {
 	u32 s_next_generation;                  /* for NFS support */
 
 	unsigned int cur_victim_sec;            /* current victim section num */
-
 };
 
 static inline struct f2fs_super_block *F2FS_RAW_SUPER(struct f2fs_sb_info *sbi)
@@ -194,6 +194,12 @@ static inline struct sit_info *SIT_I(struct f2fs_sb_info *sbi)
 static inline void *inline_data_addr(struct f2fs_node *node_blk)
 {
 	return (void *)&(node_blk->i.i_addr[1]);
+}
+
+static inline unsigned int ofs_of_node(struct f2fs_node *node_blk)
+{
+	unsigned flag = le32_to_cpu(node_blk->footer.flag);
+	return flag >> OFFSET_BIT_SHIFT;
 }
 
 static inline unsigned long __bitmap_size(struct f2fs_sb_info *sbi, int flag)
@@ -252,6 +258,12 @@ static inline block_t __start_cp_addr(struct f2fs_sb_info *sbi)
 static inline block_t __start_sum_addr(struct f2fs_sb_info *sbi)
 {
 	return le32_to_cpu(F2FS_CKPT(sbi)->cp_pack_start_sum);
+}
+
+static inline block_t __end_block_addr(struct f2fs_sb_info *sbi)
+{
+	block_t end = SM_I(sbi)->main_blkaddr;
+	return end + le64_to_cpu(F2FS_RAW_SUPER(sbi)->block_count);
 }
 
 #define GET_ZONENO_FROM_SEGNO(sbi, segno)                               \
@@ -328,7 +340,7 @@ static inline bool IS_VALID_BLK_ADDR(struct f2fs_sb_info *sbi, u32 addr)
 
 	if (addr >= F2FS_RAW_SUPER(sbi)->block_count ||
 				addr < SM_I(sbi)->main_blkaddr) {
-		ASSERT_MSG("block addr [0x%x]\n", addr);
+		DBG(1, "block addr [0x%x]\n", addr);
 		return 0;
 	}
 
@@ -370,5 +382,6 @@ static inline void node_info_from_raw_nat(struct node_info *ni,
 
 extern int lookup_nat_in_journal(struct f2fs_sb_info *sbi, u32 nid, struct f2fs_nat_entry *ne);
 #define IS_SUM_NODE_SEG(footer)		(footer.entry_type == SUM_TYPE_NODE)
+#define IS_SUM_DATA_SEG(footer)		(footer.entry_type == SUM_TYPE_DATA)
 
 #endif /* _F2FS_H_ */

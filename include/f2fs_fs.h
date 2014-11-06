@@ -63,7 +63,7 @@ static inline uint32_t bswap_32(uint32_t val)
 }
 #endif /* !HAVE_BYTESWAP_H */
 
-#if !HAVE_BSWAP_64
+#if defined HAVE_DECL_BSWAP_64 && !HAVE_DECL_BSWAP_64
 /**
  * bswap_64 - reverse bytes in a uint64_t value.
  * @val: value whose bytes to swap.
@@ -209,12 +209,13 @@ static inline uint64_t bswap_64(uint64_t val)
 #define CHECKSUM_OFFSET		4092
 
 /* for mkfs */
-#define F2FS_MIN_VOLUME_SIZE	104857600
 #define	F2FS_NUMBER_OF_CHECKPOINT_PACK	2
 #define	DEFAULT_SECTOR_SIZE		512
 #define	DEFAULT_SECTORS_PER_BLOCK	8
 #define	DEFAULT_BLOCKS_PER_SEGMENT	512
 #define DEFAULT_SEGMENTS_PER_SECTION	1
+
+#define VERSION_LEN	256
 
 enum f2fs_config_func {
 	FSCK,
@@ -228,14 +229,18 @@ struct f2fs_configuration {
 	u_int32_t cur_seg[6];
 	u_int32_t segs_per_sec;
 	u_int32_t secs_per_zone;
+	u_int32_t segs_per_zone;
 	u_int32_t start_sector;
 	u_int64_t total_sectors;
 	u_int32_t sectors_per_blk;
 	u_int32_t blks_per_seg;
+	__u8 init_version[VERSION_LEN + 1];
+	__u8 sb_version[VERSION_LEN + 1];
+	__u8 version[VERSION_LEN + 1];
 	char *vol_label;
 	u_int32_t bytes_reserved;
 	int heap;
-	int32_t fd;
+	int32_t fd, kd;
 	int32_t dump_fd;
 	char *device_name;
 	char *extension_list;
@@ -246,6 +251,7 @@ struct f2fs_configuration {
 	int fix_on;
 	int bug_on;
 	int auto_fix;
+	__le32 feature;			/* defined features */
 } __attribute__((packed));
 
 #ifdef CONFIG_64BIT
@@ -284,8 +290,8 @@ enum {
  * Copied from include/linux/f2fs_sb.h
  */
 #define F2FS_SUPER_OFFSET		1024	/* byte-size offset */
-#define F2FS_LOG_SECTOR_SIZE		9	/* 9 bits for 512 byte */
-#define F2FS_LOG_SECTORS_PER_BLOCK	3	/* 4KB: F2FS_BLKSIZE */
+#define F2FS_MIN_LOG_SECTOR_SIZE	9	/* 9 bits for 512 bytes */
+#define F2FS_MAX_LOG_SECTOR_SIZE	12	/* 12 bits for 4096 bytes */
 #define F2FS_BLKSIZE			4096	/* support only 4KB block */
 #define F2FS_MAX_EXTENSION		64	/* # of extension entries */
 #define F2FS_BLK_ALIGN(x)	(((x) + F2FS_BLKSIZE - 1) / F2FS_BLKSIZE)
@@ -309,6 +315,8 @@ enum {
 #define MAX_ACTIVE_LOGS	16
 #define MAX_ACTIVE_NODE_LOGS	8
 #define MAX_ACTIVE_DATA_LOGS	8
+
+#define F2FS_FEATURE_ENCRYPT	0x0001
 
 /*
  * For superblock
@@ -346,11 +354,18 @@ struct f2fs_super_block {
 	__le32 extension_count;		/* # of extensions below */
 	__u8 extension_list[F2FS_MAX_EXTENSION][8];	/* extension array */
 	__le32 cp_payload;
+	__u8 version[VERSION_LEN];	/* the kernel version */
+	__u8 init_version[VERSION_LEN];	/* the initial kernel version */
+	__le32 feature;			/* defined features */
+	__u8 encryption_level;		/* versioning level for encryption */
+	__u8 encrypt_pw_salt[16];	/* Salt used for string2key algorithm */
+	__u8 reserved[871];		/* valid reserved region */
 } __attribute__((packed));
 
 /*
  * For checkpoint
  */
+#define CP_FASTBOOT_FLAG	0x00000020
 #define CP_FSCK_FLAG		0x00000010
 #define CP_ERROR_FLAG		0x00000008
 #define CP_COMPACT_SUM_FLAG	0x00000004
@@ -428,6 +443,7 @@ struct f2fs_extent {
 #define F2FS_INLINE_DATA	0x02	/* file inline data flag */
 #define F2FS_INLINE_DENTRY	0x04	/* file inline dentry flag */
 #define F2FS_DATA_EXIST		0x08	/* file inline data exist flag */
+#define F2FS_INLINE_DOTS	0x10	/* file having implicit dot dentries */
 
 #define MAX_INLINE_DATA		(sizeof(__le32) * (DEF_ADDRS_PER_INODE - \
 						F2FS_INLINE_XATTR_ADDRS - 1))
@@ -436,6 +452,15 @@ struct f2fs_extent {
 				- sizeof(__le32)*(DEF_ADDRS_PER_INODE + 5 - 1))
 
 #define DEF_DIR_LEVEL		0
+
+/*
+ * i_advise uses FADVISE_XXX_BIT. We can add additional hints later.
+ */
+#define FADVISE_COLD_BIT       0x01
+#define FADVISE_LOST_PINO_BIT  0x02
+#define FADVISE_ENCRYPT_BIT    0x04
+
+#define file_is_encrypt(i_advise)      ((i_advise) & FADVISE_ENCRYPT_BIT)
 
 struct f2fs_inode {
 	__le16 i_mode;			/* file mode */
@@ -773,9 +798,17 @@ extern int dev_fill(void *, __u64, size_t);
 
 extern int dev_read_block(void *, __u64);
 extern int dev_read_blocks(void *, __u64, __u32 );
+extern int dev_reada_block(__u64);
 
+extern int dev_read_version(void *, __u64, size_t);
+extern void get_kernel_version(__u8 *);
 f2fs_hash_t f2fs_dentry_hash(const unsigned char *, int);
 
 extern struct f2fs_configuration config;
+
+#define ALIGN(val, size)	((val) + (size) - 1) / (size)
+#define SEG_ALIGN(blks)		ALIGN(blks, config.blks_per_seg)
+#define ZONE_ALIGN(blks)	ALIGN(blks, config.blks_per_seg * \
+					config.segs_per_zone)
 
 #endif	/*__F2FS_FS_H */
