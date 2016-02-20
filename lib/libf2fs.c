@@ -496,6 +496,27 @@ int f2fs_get_device_info(struct f2fs_configuration *c)
 		total_sectors /= c->sector_size;
 		c->total_sectors = total_sectors;
 #endif
+
+		if (c->bytes_reserved) {
+			unsigned int reserved_sectors;
+
+			reserved_sectors = c->bytes_reserved / c->sector_size;
+			if (c->bytes_reserved % c->sector_size) {reserved_sectors++;}
+
+			if(reserved_sectors >= c->total_sectors) {
+				MSG(0, "\n\Error: reserved bytes (%u sectors) is bigger than the device size (%u sectors)\n",
+				    (unsigned int) reserved_sectors,
+				    (unsigned int) c->total_sectors);
+				return -1;
+			}
+
+			MSG(0, "\n");
+			MSG(0, "Info: Reserved %u sectors ", (unsigned int) reserved_sectors);
+			MSG(0, "from device of size %u sectors\n",
+			    (unsigned int) c->total_sectors);
+
+			c->total_sectors -= reserved_sectors;
+		}
 		if (ioctl(fd, HDIO_GETGEO, &geom) < 0)
 			c->start_sector = 0;
 		else
